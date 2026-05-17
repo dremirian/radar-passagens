@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from dataclasses import dataclass
 from typing import Optional
 import requests
-from fast_flights import FlightData, Passengers, Result, create_filter, get_flights
+from fast_flights import FlightQuery, Passengers, create_query, get_flights
 
 # ─── Configurações ────────────────────────────────────────────────────────────
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
@@ -132,35 +132,39 @@ def montar_mensagem(p: Passagem) -> str:
 def buscar_passagens(destino_code: str, destino_nome: str, data: str) -> Optional[Passagem]:
     """Busca voo de ida GRU → destino em uma data específica."""
     try:
-        filter_ = create_filter(
-            flight_data=[
-                FlightData(date=data, from_airport=ORIGEM, to_airport=destino_code),
-            ],
+        query = create_query(
+            flights=[FlightQuery(date=data, from_airport=ORIGEM, to_airport=destino_code)],
             trip="one-way",
             seat="economy",
             passengers=Passengers(adults=1),
+            currency="BRL",
+            language="pt-BR",
         )
-        result: Result = get_flights(filter_, currency="BRL")
+        result = get_flights(query)
 
         if not result or not result.flights:
             return None
 
-        # Pega o voo mais barato
-        voos = sorted(result.flights, key=lambda f: f.price if f.price else 99999)
-        melhor = voos[0]
-
-        if not melhor.price:
+        # Pega o voo mais barato (filtra os que têm preço)
+        voos_com_preco = [f for f in result.flights if f.price]
+        if not voos_com_preco:
             return None
 
-        preco_int = int(melhor.price)
+        melhor = min(voos_com_preco, key=lambda f: f.price)
+
+        # Remove símbolo de moeda e converte para int
+        preco_str = str(melhor.price).replace("R$", "").replace(".", "").replace(",", "").strip()
+        try:
+            preco_int = int(float(preco_str))
+        except ValueError:
+            return None
+
         if preco_int > PRECO_LIMITE:
             return None
 
-        # Monta link do Google Flights
-        data_fmt = data.replace("-", "")
         link = (
             f"https://www.google.com/travel/flights?q=Voos+de+"
-            f"{ORIGEM}+para+{destino_code}+em+{data}&hl=pt-BR&curr=BRL"
+            f"{ORIGEM}+para+{destino_code}&hl=pt-BR&curr=BRL"
         )
 
         return Passagem(
@@ -169,8 +173,8 @@ def buscar_passagens(destino_code: str, destino_nome: str, data: str) -> Optiona
             destino_nome=destino_nome,
             preco=preco_int,
             data_ida=data,
-            duracao=melhor.duration or "N/A",
-            companhia=melhor.name or "N/A",
+            duracao=getattr(melhor, "duration", None) or "N/A",
+            companhia=getattr(melhor, "name", None) or "N/A",
             link=link,
         )
 
