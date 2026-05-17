@@ -1,0 +1,48 @@
+name: ✈️ Radar de Passagens
+
+on:
+  schedule:
+    - cron: "0 3,9,15,21 * * *"
+  workflow_dispatch:
+
+jobs:
+  radar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: 🐍 Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 📦 Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: 📂 Restaurar histórico de alertas
+        uses: actions/cache@v4
+        with:
+          path: historico_alertas.json
+          key: historico-alertas-${{ github.run_id }}
+          restore-keys: |
+            historico-alertas-
+
+      - name: 🔍 Rodar o radar
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+          PRECO_LIMITE:       ${{ vars.PRECO_LIMITE || '800' }}
+          ORIGEM:             ${{ vars.ORIGEM || 'GRU' }}
+          DIAS_ANTECEDENCIA:  ${{ vars.DIAS_ANTECEDENCIA || '30' }}
+        run: python radar.py
+
+      - name: 💾 Salvar histórico atualizado
+        uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: historico_alertas.json
+          key: historico-alertas-${{ github.run_id }}
