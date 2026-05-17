@@ -140,27 +140,28 @@ def buscar_passagens(destino_code: str, destino_nome: str, data: str) -> Optiona
             currency="BRL",
             language="pt-BR",
         )
+        # result é uma MetaList de objetos Flights
         result = get_flights(query)
 
-        if not result or not result.flights:
+        if not result:
             return None
 
-        # Pega o voo mais barato (filtra os que têm preço)
-        voos_com_preco = [f for f in result.flights if f.price]
-        if not voos_com_preco:
+        # Pega o voo mais barato (price é int direto em BRL)
+        melhor = min(result, key=lambda f: f.price if f.price else 99999)
+
+        if not melhor.price or melhor.price > PRECO_LIMITE:
             return None
 
-        melhor = min(voos_com_preco, key=lambda f: f.price)
+        # Duração total = soma das durações dos trechos (em minutos)
+        duracao_min = sum(
+            sf.duration for sf in melhor.flights if sf.duration
+        ) if melhor.flights else 0
+        horas = duracao_min // 60
+        minutos = duracao_min % 60
+        duracao_str = f"{horas}h {minutos:02d}min" if duracao_min else "N/A"
 
-        # Remove símbolo de moeda e converte para int
-        preco_str = str(melhor.price).replace("R$", "").replace(".", "").replace(",", "").strip()
-        try:
-            preco_int = int(float(preco_str))
-        except ValueError:
-            return None
-
-        if preco_int > PRECO_LIMITE:
-            return None
+        # Companhias
+        companhia_str = ", ".join(melhor.airlines) if melhor.airlines else "N/A"
 
         link = (
             f"https://www.google.com/travel/flights?q=Voos+de+"
@@ -171,10 +172,10 @@ def buscar_passagens(destino_code: str, destino_nome: str, data: str) -> Optiona
             origem=ORIGEM,
             destino_code=destino_code,
             destino_nome=destino_nome,
-            preco=preco_int,
+            preco=melhor.price,
             data_ida=data,
-            duracao=getattr(melhor, "duration", None) or "N/A",
-            companhia=getattr(melhor, "name", None) or "N/A",
+            duracao=duracao_str,
+            companhia=companhia_str,
             link=link,
         )
 
